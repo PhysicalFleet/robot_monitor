@@ -51,6 +51,7 @@ def test_liveliness():
 def test_short():
     assert qos.short(q()) == 'reliable/volatile/keep_last(10)'
     assert qos.short(None) == '?'
+    assert qos.short(q(rel='best_effort') | {'history': 'unknown'}) == 'best_effort/volatile'
 
 
 def test_qos_to_dict_from_rclpy():

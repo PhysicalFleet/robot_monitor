@@ -4,7 +4,7 @@
 
 Robot Monitor finds every node, maps it to the process that runs it (CPU, memory, restarts), measures every topic (rate, bandwidth, latency), and tells you in plain words what is broken and how to fix it: QoS mismatches, mistyped topic names, duplicate node names, stalled sensors, CPU-starved nodes, memory leaks, under-voltage. It runs on the robot, opens a live dashboard in your browser, and needs no configuration, no account and no internet.
 
-![Robot Monitor overview](docs/overview.png)
+![Robot Monitor finding a QoS mismatch, a CPU-saturated node and more on a demo robot](docs/demo.gif)
 
 ```bash
 ros2 run robot_monitor robot_monitor
@@ -46,6 +46,8 @@ Rules are conservative on purpose: event-driven topics are never called "stale",
 - **Diagnostics**: everything published on `/diagnostics`, grouped.
 - **Share report**: one click gives a Markdown health report to paste into a GitHub issue or ROS Discourse question.
 - **Baseline**: save "this is what normal looks like" (nodes and topic rates). From then on a missing node or a slow topic is an error, even after a reboot.
+
+![Overview](docs/overview.png)
 
 ![Graph view](docs/graph.png)
 

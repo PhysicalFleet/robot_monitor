@@ -67,6 +67,9 @@ def short(qd):
     hist = qd['history']
     if hist == 'keep_last':
         hist = 'keep_last(%d)' % qd['depth']
+    elif hist in ('unknown', 'system_default'):
+        # Discovered remote endpoints don't report their history setting.
+        return '%s/%s' % (qd['reliability'], qd['durability'])
     return '%s/%s/%s' % (qd['reliability'], qd['durability'], hist)
 
 
