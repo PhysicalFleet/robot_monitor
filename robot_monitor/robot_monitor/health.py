@@ -77,6 +77,7 @@ class HealthEngine:
             'disk_warn_pct': 90.0,
             'disk_error_pct': 97.0,
             'age_warn_ms': 1000.0,
+            'diag_warn_hold_s': 10.0,
         }
         if cfg:
             self.cfg.update({k: v for k, v in cfg.items() if k in self.cfg})
@@ -397,7 +398,7 @@ class HealthEngine:
                           'Open the Logs tab filtered on this node.', [name]))
         for d in m.get('diagnostics') or []:
             lvl = d['level']
-            if lvl in (2, 3) or (lvl == 1 and d.get('held_s', 0) > 10):
+            if lvl in (2, 3) or (lvl == 1 and d.get('held_s', 0) > self.cfg['diag_warn_hold_s']):
                 sev = {1: 'warn', 2: 'error', 3: 'warn'}[lvl]
                 what = {1: 'warns', 2: 'reports an error', 3: 'is stale'}[lvl]
                 src = d.get('hardware_id') or 'a node'

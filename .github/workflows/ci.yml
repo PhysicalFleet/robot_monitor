@@ -77,4 +77,5 @@ jobs:
           grep -q "QoS mismatch on /scan" report.md
           grep -q "share the name /motor_driver" report.md
           grep -q "did you mean /camera/image_raw" report.md
+          grep -q "motors/battery warns" report.md
           ! grep -q "robot_monitor: " report.md

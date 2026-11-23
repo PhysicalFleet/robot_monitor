@@ -113,6 +113,11 @@ class CheckVerb(VerbExtension):
 
     def main(self, *, args):
         rclpy, node, ex = _start(baseline=args.baseline)
+        # A one-shot check only watches for a few seconds: shorten the waits that protect the
+        # live dashboard from start-up noise, so a mistyped topic or a WARN still shows up.
+        grace = max(2.0, min(args.duration * 0.6, 20.0))
+        node.health.cfg['dangling_grace_s'] = grace
+        node.health.cfg['diag_warn_hold_s'] = min(grace, 10.0)
         try:
             if args.expect_nodes:
                 exp = dict(node.expect or {})

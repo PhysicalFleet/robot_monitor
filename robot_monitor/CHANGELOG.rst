@@ -13,6 +13,8 @@ Changelog for package robot_monitor
 * No issues for hidden helper nodes or DDS endpoints that ROS can't name.
 * Use ``logger.warning`` (``warn`` no longer exists in newer rclpy).
 * Readable names for ``python -c`` / ``python -m`` processes; unique node names for CLI runs.
+* ``check``: a mistyped topic and a /diagnostics WARN are now reported within a short run (the
+  waits that keep start-up noise off the dashboard are scaled to the check's duration).
 
 0.2.0 (2026-11-23)
 ------------------
