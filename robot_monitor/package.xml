@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>robot_monitor</name>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
   <description>
     Zero-config health monitor for ROS 2: discovers every node and maps it to its
     process (CPU, memory, restarts) on any middleware, measures topic rates,
@@ -16,7 +16,6 @@
   <url type="website">https://github.com/PhysicalFleet/robot_monitor</url>
   <url type="repository">https://github.com/PhysicalFleet/robot_monitor</url>
   <url type="bugtracker">https://github.com/PhysicalFleet/robot_monitor/issues</url>
-  <author>PhysicalFleet</author>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>ros2cli</exec_depend>
@@ -32,6 +31,8 @@
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>tf2_msgs</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

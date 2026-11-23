@@ -1,4 +1,4 @@
-# Copyright 2026 PhysicalFleet
+# Copyright 2026 The Robot Monitor Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -82,6 +82,12 @@ def make_handler(monitor, allow_write=True):
                 text = report.render(monitor.snapshot, fmt=fmt)
                 return self._send(200, text, 'text/markdown; charset=utf-8' if fmt == 'md'
                                   else 'text/plain; charset=utf-8')
+            if path == '/api/echo':
+                topic = (q.get('topic') or [''])[0]
+                return self._send(200, json.dumps(monitor.request('echo', topic), default=str))
+            if path == '/api/params':
+                node = (q.get('node') or [''])[0]
+                return self._send(200, json.dumps(monitor.request('params', node), default=str))
             if path == '/api/baseline/preview':
                 return self._send(200, json.dumps(monitor.baseline_from_now()))
             if path == '/metrics':

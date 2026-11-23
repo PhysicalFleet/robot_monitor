@@ -1,4 +1,4 @@
-# Copyright 2026 PhysicalFleet
+# Copyright 2026 The Robot Monitor Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,6 +46,21 @@ def test_calibration_fastdds():
     assert c.ok and c.offset == 4 and c.width == 2
     assert c.decode(fastdds_prefix(b'\x24\x0d', 77)) == (True, 77)
     assert c.decode(fastdds_prefix(b'\x99\x99', 77))[0] is False
+
+
+def test_host_id_changed_after_interface_change():
+    # Same machine, but the robot's processes started before a VPN interface came up,
+    # so their Fast DDS host id differs from ours. They must still map locally.
+    me = fastdds_prefix(b'\x52\x34', 10)
+    r = Resolver(log_dirs=[])
+    r.calibrate([me], 10)
+    table = FakeTable([proc(10, ['python3', 'mon']), proc(1560, ['/ws/lib/x/tof'])], self_pid=10)
+    nodes = {'/mon': {'prefixes': {me}},
+             '/tof': {'prefixes': {fastdds_prefix(b'\x5c\x93', 1560)}},
+             '/far': {'prefixes': {fastdds_prefix(b'\x11\x11', 4321)}}}
+    out = r.resolve(nodes, table, '/mon')
+    assert out['/tof'] == {'pid': 1560, 'how': 'guid', 'remote': False}
+    assert out['/far']['remote'] is True and out['/far']['pid'] is None
 
 
 def test_calibration_random_prefix_fails():

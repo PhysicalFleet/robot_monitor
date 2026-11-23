@@ -5,14 +5,14 @@ const $ = (id) => document.getElementById(id);
 const S = {
   snap: null, tab: 'overview', sel: null, filter: '', live: false,
   sort: { nodes: ['cpu', -1], topics: ['name', 1], procs: ['cpu', -1] },
-  showHidden: false, topicsView: 'all',
+  showHidden: false, topicsView: 'all', echo: {}, params: {},
   logs: [], logSeq: 0, logLevels: { 10: false, 20: true, 30: true, 40: true, 50: true },
   logPaused: false, logNode: '',
   graph: { pos: new Map(), sig: '', view: { x: 40, y: 40, k: 1 }, showSystem: false, focus: null },
 };
 const TABS = [
   ['overview', 'Overview'], ['nodes', 'Nodes'], ['topics', 'Topics'], ['graph', 'Graph'],
-  ['logs', 'Logs'], ['diagnostics', 'Diagnostics'],
+  ['tf', 'TF'], ['logs', 'Logs'], ['diagnostics', 'Diagnostics'],
 ];
 const LVL = { 10: 'DEBUG', 20: 'INFO', 30: 'WARN', 40: 'ERROR', 50: 'FATAL' };
 
@@ -248,6 +248,7 @@ function renderTabs() {
     logs: (() => { const e = Object.values(s.log_counts || {}).reduce((a, c) => a + (c.error5m || 0), 0); return e ? '<span class="count err">' + e + '</span>' : ''; })(),
     diagnostics: (() => { const bad = (s.diagnostics || []).filter((d) => d.level === 2).length, w = (s.diagnostics || []).filter((d) => d.level === 1).length; return bad ? '<span class="count err">' + bad + '</span>' : w ? '<span class="count warn">' + w + '</span>' : (s.diagnostics || []).length ? '<span class="count">' + s.diagnostics.length + '</span>' : ''; })(),
     graph: '',
+    tf: (() => { const f = ((s.tf || {}).frames || []).length; const bad = s.issues.some((i) => i.category === 'tf' && i.severity !== 'info'); return f ? '<span class="count' + (bad ? ' warn' : '') + '">' + f + '</span>' : ''; })(),
   };
   const html = TABS.map(([k, label]) => '<a href="#/' + k + '" class="' + (S.tab === k ? 'on' : '') + '">' + label + ' ' + (counts[k] || '') + '</a>').join('');
   if ($('tabs').innerHTML !== html) $('tabs').innerHTML = html;
@@ -263,6 +264,7 @@ function renderMain() {
   else if (S.tab === 'nodes') html = viewNodes();
   else if (S.tab === 'topics') html = viewTopics();
   else if (S.tab === 'logs') html = viewLogs();
+  else if (S.tab === 'tf') html = viewTf();
   else if (S.tab === 'diagnostics') html = viewDiagnostics();
   if (html === S.lastMain && m.dataset.tab === S.tab) return;
   if (userIsSelecting(m)) return;  // don't wipe a selection the user is making
@@ -280,7 +282,7 @@ function searchBox(ph) {
 
 // -------------------------------------------------------------- overview --
 function issueHtml(i) {
-  const subj = i.subjects.filter((x) => x).map((x) => '<a class="subj" data-subj="' + esc(x) + '">' + esc(x.replace(/^diag:/, '')) + '</a>').join('');
+  const subj = i.subjects.filter((x) => x).map((x) => '<a class="subj" data-subj="' + esc(x) + '">' + esc(x.replace(/^(diag|tf):/, '')) + '</a>').join('');
   return '<div class="issue ' + i.severity + '"><div class="bar"></div><div class="body">' +
     '<div class="t"><span class="sev">' + (i.severity === 'warn' ? 'warning' : i.severity) + '</span><span>' + esc(i.title) + '</span><span class="when">' + ago(i.since) + '</span></div>' +
     (i.detail ? '<div class="d">' + esc(i.detail) + '</div>' : '') +
@@ -447,6 +449,51 @@ function viewLogs() {
   return h;
 }
 
+// -------------------------------------------------------------------- tf --
+function viewTf() {
+  const tf = S.snap.tf || { frames: [], roots: [] };
+  let h = '<div class="toolbar">' + searchBox('Filter frames…') + '<span class="spacer"></span><span class="faint">from /tf and /tf_static</span></div>';
+  if (!tf.frames.length) return h + '<div class="card empty">No transforms seen on /tf or /tf_static yet. Nodes such as robot_state_publisher, static_transform_publisher, odometry and localization publish them.</div>';
+  const byFrame = new Map(tf.frames.map((f) => [f.frame, f]));
+  const kids = new Map();
+  for (const f of tf.frames) {
+    const p = f.parent || '';
+    if (!kids.has(p)) kids.set(p, []);
+    kids.get(p).push(f.frame);
+  }
+  const roots = [...new Set(tf.frames.map((f) => f.parent).filter((p) => p && !byFrame.has(p)))].sort();
+  const seen = new Set();
+  const rows = [];
+  const walk = (frame, depth) => {
+    if (seen.has(frame) || depth > 40) return;
+    seen.add(frame);
+    rows.push([frame, depth]);
+    for (const c of (kids.get(frame) || []).sort()) walk(c, depth + 1);
+  };
+  for (const r of roots) walk(r, 0);
+  for (const f of tf.frames) if (!seen.has(f.frame)) walk(f.frame, 0);   // cycles
+  h += '<div class="tablewrap"><table class="t"><thead><tr><th style="width:18px"></th><th>Frame</th><th>Parent</th><th class="r">Rate</th><th class="r">Last update</th><th>Notes</th></tr></thead><tbody>';
+  for (const [frame, depth] of rows) {
+    const f = byFrame.get(frame);
+    if (!matches(frame + ' ' + (f ? f.parent : ''))) continue;
+    const sev = sevOf('tf:' + frame);
+    const notes = [];
+    if (!f) notes.push('<span class="tag">root</span>');
+    else {
+      if (f.static) notes.push('<span class="tag">static</span>');
+      if (f.parents.length > 1) notes.push('<span class="tag err">' + f.parents.length + ' parents</span>');
+      if (f.both) notes.push('<span class="tag warn">static and dynamic</span>');
+    }
+    h += '<tr><td><span class="dot ' + (sev || (f && !f.static && f.hz === 0 ? 'idle' : '')) + '"></span></td>' +
+      '<td class="mono" style="padding-left:' + (12 + depth * 18) + 'px">' + (depth ? '<span class="faint">└ </span>' : '') + '<b>' + esc(frame) + '</b></td>' +
+      '<td class="mono muted">' + esc(f ? f.parent : '') + '</td>' +
+      '<td class="r num">' + (f ? (f.static ? '<span class="faint">static</span>' : fmtHz(f.hz) + ' Hz') : '') + '</td>' +
+      '<td class="r num muted">' + (f && f.age_s != null && !f.static ? fmtDur(f.age_s) + ' ago' : '') + '</td><td>' + notes.join(' ') + '</td></tr>';
+  }
+  h += '</tbody></table></div>';
+  return h;
+}
+
 // ----------------------------------------------------------- diagnostics --
 function viewDiagnostics() {
   const ds = (S.snap.diagnostics || []).filter((d) => matches(d.name + ' ' + d.message + ' ' + d.hardware_id));
@@ -544,6 +591,14 @@ function drawerNode(name) {
   const pubs = n.pubs.filter((x) => !sysT(x)), subs = n.subs.filter((x) => !sysT(x));
   if (pubs.length) h += '<h3>Publishes (' + pubs.length + ')</h3><div class="eplist">' + pubs.map(topicLink).join('') + '</div>';
   if (subs.length) h += '<h3>Subscribes (' + subs.length + ')</h3><div class="eplist">' + subs.map(topicLink).join('') + '</div>';
+  if ((n.actions || []).length) h += '<h3>Actions (' + n.actions.length + ')</h3><div class="eplist">' + n.actions.map((a) => '<div class="ep"><span class="grow mono">' + esc(a) + '</span></div>').join('') + '</div>';
+  if ((n.service_names || []).length) h += '<h3>Services (' + n.service_names.length + ')</h3><div class="eplist">' + n.service_names.map((a) => '<div class="ep"><span class="grow mono">' + esc(a) + '</span></div>').join('') + '</div>';
+  h += '<h3>Parameters</h3>';
+  const pr = S.params[name];
+  if (!pr) h += '<button class="btn" data-params="' + esc(name) + '">Show parameters</button>';
+  else if (pr.loading) h += '<div class="muted">Asking the node…</div>';
+  else if (pr.error) h += '<div class="muted">' + esc(pr.error) + '</div> <button class="btn" data-params="' + esc(name) + '">Try again</button>';
+  else h += '<div class="muted" style="margin-bottom:6px">' + pr.params.length + ' parameters, read ' + ago(pr.at) + ' <button class="btn" data-params="' + esc(name) + '">Refresh</button></div>' + (pr.params.length ? '<div class="eplist params">' + pr.params.map((kv) => '<div class="ep"><span class="pname mono">' + esc(kv[0]) + '</span><span class="pval mono">' + esc(JSON.stringify(kv[1])) + '</span></div>').join('') + '</div>' : '');
   if (p) h += '<h3>Command</h3><pre class="cmd">' + esc(p.cmd) + '</pre>';
   const lg = name.replace(/^\//, '').replace(/\//g, '.');
   const logs = S.logs.filter((l) => l.logger === lg).slice(-15).reverse();
@@ -579,8 +634,26 @@ function drawerTopic(name) {
   const pubs = t.pubs.filter((e) => !e.self), subs = t.subs.filter((e) => !e.self);
   h += '<h3>Publishers (' + pubs.length + ')</h3>' + (pubs.length ? '<div class="eplist">' + pubs.map(ep).join('') + '</div>' : '<div class="muted">none</div>');
   h += '<h3>Subscribers (' + subs.length + ')</h3>' + (subs.length ? '<div class="eplist">' + subs.map(ep).join('') + '</div>' : '<div class="muted">none</div>');
+  h += '<h3>Latest message</h3>';
+  const ec = S.echo[name];
+  if (!ec) h += '<button class="btn" data-echo="' + esc(name) + '">Show the latest message</button>';
+  else if (ec.loading) h += '<div class="muted">Waiting for a message…</div>';
+  else if (ec.error) h += '<div class="muted">' + esc(ec.error) + '</div> <button class="btn" data-echo="' + esc(name) + '">Try again</button>';
+  else h += '<div class="muted" style="margin-bottom:6px">' + fmtBytes(ec.bytes) + ', received ' + ago(ec.at) + ' <button class="btn" data-echo="' + esc(name) + '">Refresh</button></div><pre class="cmd msg">' + esc(JSON.stringify(ec.message, null, 2)) + '</pre>';
   h += '<h3>Try</h3><pre class="cmd">ros2 topic echo ' + esc(name) + ' --once\nros2 topic info ' + esc(name) + ' --verbose</pre>';
   $('d-body').innerHTML = h;
+}
+function loadEcho(name) {
+  S.echo[name] = { loading: true }; S.forceDrawer = true; renderDrawer();
+  fetch('/api/echo?topic=' + encodeURIComponent(name)).then((r) => r.json()).then((d) => {
+    S.echo[name] = d.error ? { error: d.error } : { message: d.message, bytes: d.bytes, at: Date.now() / 1000 };
+  }).catch((e) => { S.echo[name] = { error: String(e) }; }).finally(() => { S.forceDrawer = true; renderDrawer(); });
+}
+function loadParams(node) {
+  S.params[node] = { loading: true }; S.forceDrawer = true; renderDrawer();
+  fetch('/api/params?node=' + encodeURIComponent(node)).then((r) => r.json()).then((d) => {
+    S.params[node] = d.error ? { error: d.error } : { params: d.params, at: Date.now() / 1000 };
+  }).catch((e) => { S.params[node] = { error: String(e) }; }).finally(() => { S.forceDrawer = true; renderDrawer(); });
 }
 function drawerProc(pid) {
   const p = S.snap.procs.find((x) => x.pid === pid);
@@ -863,7 +936,7 @@ function openBaseline() {
 }
 function openAbout() {
   modal('<h4>Robot Monitor</h4><p>Free, open-source (Apache-2.0) health monitoring for ROS 2. No account, no cloud, no telemetry: everything runs on this robot.</p>' +
-    '<p>Built and maintained by <a href="https://physicalfleet.io" target="_blank" rel="noopener">PhysicalFleet</a>. Bug reports, ideas and pull requests are welcome on GitHub.</p>' +
+    '<p>Bug reports, ideas and pull requests are welcome on GitHub.</p>' +
     '<div class="row"><a class="btn" href="https://github.com/PhysicalFleet/robot_monitor" target="_blank" rel="noopener">GitHub</a><button class="btn primary" data-close>Close</button></div>');
 }
 
@@ -897,11 +970,16 @@ document.addEventListener('click', (e) => {
     e.preventDefault();
     const x = subj.dataset.subj;
     if (x === 'host' || x === 'self') select('host', 'host');
+    else if (x.startsWith('tf:')) { S.filter = x.slice(3); S.keepFilter = true; location.hash = '#/tf'; }
     else if (x.startsWith('diag:')) { S.filter = x.slice(5); S.keepFilter = true; location.hash = '#/diagnostics'; }
     else if (S.snap.topics.some((tp) => tp.name === x)) select('topic', x);
     else select('node', x);
     return;
   }
+  const ech = t.closest('[data-echo]');
+  if (ech) { loadEcho(ech.dataset.echo); return; }
+  const prm = t.closest('[data-params]');
+  if (prm) { loadParams(prm.dataset.params); return; }
   const n = t.closest('[data-node]');
   if (n) { e.preventDefault(); select('node', n.dataset.node); return; }
   const tp = t.closest('[data-topic]');
@@ -933,7 +1011,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { if ($('modal').classList.contains('open')) closeModal(); else select(null, null); return; }
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.metaKey || e.ctrlKey) return;
   if (e.key === '/') { const q = $('q'); if (q) { e.preventDefault(); q.focus(); } return; }
-  const i = '123456'.indexOf(e.key);
+  const i = '1234567'.indexOf(e.key);
   if (i >= 0) location.hash = '#/' + TABS[i][0];
 });
 $('d-close').onclick = () => select(null, null);

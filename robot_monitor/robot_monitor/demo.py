@@ -1,4 +1,4 @@
-# Copyright 2026 PhysicalFleet
+# Copyright 2026 The Robot Monitor Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,8 @@ A small robot with typical real-world bugs, to try Robot Monitor in 10 seconds.
 Each role runs in its own process, like a real robot. The bugs are the ones
 people lose hours on: QoS mismatch, a mistyped topic, duplicate node names, a
 CPU-bound node, a slow memory leak, a flaky sensor, a lifecycle node nobody
-activated, a node that logs errors and a /diagnostics warning.
+activated, a node that logs errors, a /diagnostics warning and a TF frame with two
+parents.
 """
 
 import argparse
@@ -38,6 +39,24 @@ from rclpy.qos import ReliabilityPolicy
 def _stamp(node, header, frame):
     header.stamp = node.get_clock().now().to_msg()
     header.frame_id = frame
+
+
+def _tf_publisher(node, static=False):
+    from tf2_msgs.msg import TFMessage
+    if static:
+        qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        return node.create_publisher(TFMessage, '/tf_static', qos)
+    return node.create_publisher(TFMessage, '/tf', 100)
+
+
+def _transform(node, parent, child, x=0.0, y=0.0, z=0.0):
+    from geometry_msgs.msg import TransformStamped
+    t = TransformStamped()
+    _stamp(node, t.header, parent)
+    t.child_frame_id = child
+    t.transform.translation.x, t.transform.translation.y, t.transform.translation.z = x, y, z
+    t.transform.rotation.w = 1.0
+    return t
 
 
 class Camera(Node):
@@ -92,6 +111,11 @@ class Slam(Node):
         _stamp(self, m.header, 'map')
         self.map_pub.publish(m)
         self.create_timer(20.0, lambda: self.get_logger().warn('no scans received yet'))
+        # BUG: publishes map -> base_link instead of map -> odom, so base_link gets two parents.
+        from tf2_msgs.msg import TFMessage
+        tf = _tf_publisher(self)
+        self.create_timer(0.1, lambda: tf.publish(TFMessage(
+            transforms=[_transform(self, 'map', 'base_link')])))
 
 
 class Detector(Node):
@@ -115,11 +139,22 @@ class Odometry(Node):
         self.msg = Odom()
         self.msg.child_frame_id = 'base_link'
         self.pub = self.create_publisher(Odom, '/odom', 10)
+        self.tf = _tf_publisher(self)
+        from tf2_msgs.msg import TFMessage
+        self.tfmsg = TFMessage
+        static = _tf_publisher(self, static=True)
+        static.publish(TFMessage(transforms=[
+            _transform(self, 'base_link', 'laser', 0.1, 0.0, 0.2),
+            _transform(self, 'base_link', 'camera_link', 0.15, 0.0, 0.3),
+            _transform(self, 'camera_link', 'camera_optical_frame'),
+            _transform(self, 'base_link', 'imu_link')]))
+        self._static = static
         self.create_timer(0.02, self.tick)
 
     def tick(self):
         _stamp(self, self.msg.header, 'odom')
         self.pub.publish(self.msg)
+        self.tf.publish(self.tfmsg(transforms=[_transform(self, 'odom', 'base_link')]))
 
 
 class Planner(Node):

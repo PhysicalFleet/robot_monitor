@@ -2,6 +2,16 @@
 Changelog for package robot_monitor
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.2.0 (2026-11-23)
+------------------
+* TF tab: the live TF tree from /tf and /tf_static with per-frame rates and last update;
+  frame names are read from the raw messages, so busy /tf streams stay cheap.
+* New rules: a TF frame with two parents, a frame on both /tf and /tf_static, a transform
+  that stopped updating, a TF tree split into separate trees.
+* Topic panel: "Show the latest message" (cached from the monitor's own subscription when
+  possible; long arrays and strings are shortened).
+* Node panel: read-only parameters on request, plus the node's services and actions.
+
 0.1.0 (2026-11-23)
 ------------------
 * First release.

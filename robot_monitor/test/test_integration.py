@@ -1,4 +1,4 @@
-# Copyright 2026 PhysicalFleet
+# Copyright 2026 The Robot Monitor Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -126,6 +126,15 @@ def test_sse_stream(system):
     with urllib.request.urlopen('http://127.0.0.1:%d/api/events' % port, timeout=5) as r:
         first = r.readline()
         assert first.startswith(b'event: snapshot')
+
+
+def test_latest_message_and_parameters(system):
+    _, port, _ = system
+    d = json.loads(_get(port, '/api/echo?topic=/itest/imu')[2])
+    assert 'header' in d['message'] and d['bytes'] > 0, d
+    assert 'error' in json.loads(_get(port, '/api/echo?topic=/does/not/exist')[2])
+    p = json.loads(_get(port, '/api/params?node=/itest_pub')[2])
+    assert any(name == 'use_sim_time' for name, _ in p['params']), p
 
 
 def test_baseline_roundtrip_and_csrf(system):

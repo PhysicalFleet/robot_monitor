@@ -1,4 +1,4 @@
-# Copyright 2026 PhysicalFleet
+# Copyright 2026 The Robot Monitor Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -102,6 +102,7 @@ class HealthEngine:
         self._process_rules(model, now, add)
         self._host_rules(model, now, add)
         self._feed_rules(model, now, add)
+        self._tf_rules(model, now, add)
         self._expectation_rules(model, now, add)
         wall = time.time()
         live = set()
@@ -401,6 +402,46 @@ class HealthEngine:
                           '%s (reported on /diagnostics by %s)' % (
                               d.get('message') or 'no message', src), '',
                           ['diag:' + d['name']]))
+
+    # --------------------------------------------------------------- tf --
+    def _tf_rules(self, m, now, add):
+        tf = m.get('tf') or {}
+        frames = tf.get('frames') or []
+        for f in frames:
+            if len(f['parents']) > 1:
+                add(Issue('tf:parents:' + f['frame'], 'error', 'tf',
+                          'TF frame %s has %d parents: %s' % (
+                              f['frame'], len(f['parents']), ', '.join(f['parents'])),
+                          'Two publishers attach the same child frame to different parents, so '
+                          'transform lookups flip between them or fail.',
+                          'Make exactly one node publish %s (often a duplicate '
+                          'robot_state_publisher, static_transform_publisher or localization '
+                          'node).' % f['frame'], ['tf:' + f['frame']]))
+            elif f.get('both'):
+                add(Issue('tf:both:' + f['frame'], 'warn', 'tf',
+                          'TF frame %s is on both /tf and /tf_static' % f['frame'],
+                          'The same transform is published as static and as dynamic.',
+                          'Publish it on one of the two: /tf_static for fixed transforms, /tf '
+                          'for moving ones.', ['tf:' + f['frame']]))
+            period = f.get('period_s')
+            stale = bool(not f['static'] and period and f['age_s'] is not None
+                         and f['age_s'] > max(1.0, 5 * period))
+            if self._held('tfstale:' + f['frame'], stale, now, 2):
+                add(Issue('tf:stale:' + f['frame'], 'warn', 'tf',
+                          'Transform %s \u2192 %s stopped updating' % (f['parent'], f['frame']),
+                          'It was published every %.0f ms and the last update was %s ago. Lookups '
+                          'that need a recent transform will time out.' % (
+                              period * 1000, _ago(f['age_s'])),
+                          'Check the node that publishes this transform (odometry, localization, '
+                          'joint states for robot_state_publisher).', ['tf:' + f['frame']]))
+        roots = tf.get('roots') or []
+        if len(roots) > 1 and self._held('tf:roots', True, now, 20):
+            add(Issue('tf:roots', 'info', 'tf',
+                      'The TF tree is split into %d separate trees' % len(roots),
+                      'Roots: %s. Frames in different trees cannot be transformed into each other.'
+                      % ', '.join(roots[:6]),
+                      'Fine if intended; otherwise a static transform is missing between them.',
+                      ['tf:' + r for r in roots[:6]]))
 
     # ----------------------------------------------------- expectations --
     def _expectation_rules(self, m, now, add):

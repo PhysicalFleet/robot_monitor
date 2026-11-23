@@ -1,4 +1,4 @@
-# Copyright 2026 PhysicalFleet
+# Copyright 2026 The Robot Monitor Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,4 +13,4 @@
 # limitations under the License.
 """Robot Monitor: zero-config health monitoring for ROS 2 robots."""
 
-__version__ = '0.1.0'
+__version__ = '0.2.0'

@@ -1,4 +1,4 @@
-# Copyright 2026 PhysicalFleet
+# Copyright 2026 The Robot Monitor Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ from collections import deque
 import itertools
 import json
 import os
+import queue
 import re
 import socket
 import threading
@@ -38,6 +39,7 @@ from . import qos as qosmod
 from .health import HealthEngine, is_hidden_node, is_hidden_topic
 from .procs import HostMonitor, ProcessTable, rss_slope_mb_per_min
 from .resolver import logger_name, Resolver
+from .tf import TfTracker
 from .topicstats import stamp_reader, TopicStats
 
 try:  # Jazzy and newer
@@ -55,12 +57,21 @@ HEAVY_TYPES = {'sensor_msgs/msg/Image', 'sensor_msgs/msg/PointCloud2',
                'sensor_msgs/msg/PointCloud', 'stereo_msgs/msg/DisparityImage',
                'octomap_msgs/msg/Octomap', 'grid_map_msgs/msg/GridMap'}
 # Topics we read through dedicated subscriptions (content, not just stats).
-FEED_TOPICS = {'/rosout', '/diagnostics'}
+FEED_TOPICS = {'/rosout', '/diagnostics', '/tf', '/tf_static'}
 NOT_MONITORED = {'/parameter_events'}
+# Services every node has; hidden from the node's service list.
+STD_SERVICES = {'describe_parameters', 'get_parameter_types', 'get_parameters', 'list_parameters',
+                'set_parameters', 'set_parameters_atomically', 'get_type_description'}
 
 MONITOR_QOS = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10,
                          reliability=ReliabilityPolicy.BEST_EFFORT,
                          durability=DurabilityPolicy.VOLATILE)
+TF_QOS = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=100,
+                    reliability=ReliabilityPolicy.BEST_EFFORT,
+                    durability=DurabilityPolicy.VOLATILE)
+TF_STATIC_QOS = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1000,
+                           reliability=ReliabilityPolicy.RELIABLE,
+                           durability=DurabilityPolicy.TRANSIENT_LOCAL)
 FEED_QOS = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=200,
                       reliability=ReliabilityPolicy.RELIABLE,
                       durability=DurabilityPolicy.VOLATILE)
@@ -75,7 +86,7 @@ class _Watched:
     """A topic we subscribe to for statistics."""
 
     __slots__ = ('name', 'type', 'cls', 'stats', 'sub', 'mode', 'reader', 'frozen',
-                 'window_end', 'next_on', 'reason', 'heavy', 'on_s')
+                 'window_end', 'next_on', 'reason', 'heavy', 'on_s', 'last')
 
     def __init__(self, name, type_name):
         self.name, self.type = name, type_name
@@ -90,6 +101,7 @@ class _Watched:
         self.reason = ''
         self.heavy = False
         self.on_s = 2.0
+        self.last = [None]         # the latest raw message (kept for "latest message")
 
 
 class Monitor(Node):
@@ -160,6 +172,9 @@ class Monitor(Node):
                           if get_message else None)
 
         self._feeds = []
+        self.tf = TfTracker()
+        self.jobs = queue.Queue()
+        self._echo_pending = {}
         self._make_feeds()
         if self.p_pub_diag and self._diag_cls is not None:
             self._diag_pub = self.create_publisher(self._diag_cls, '/diagnostics', 10)
@@ -170,6 +185,7 @@ class Monitor(Node):
         self.create_timer(self.p_period, self._snapshot_tick)
         self.create_timer(0.25, self._sample_tick)
         self.create_timer(5.0, self._slow_tick)
+        self.create_timer(0.1, self._job_tick)
         self._graph_tick()
 
     # ------------------------------------------------------------ feeds --
@@ -190,6 +206,22 @@ class Monitor(Node):
             self._feeds.append(self.create_subscription(
                 self._diag_cls, '/diagnostics', lambda raw: self._on_diag(raw, w),
                 FEED_QOS, raw=True, event_callbacks=_no_events()))
+        tf_cls = get_message('tf2_msgs/msg/TFMessage') if get_message else None
+        if tf_cls is not None:
+            for name, qos, static in (('/tf', TF_QOS, False), ('/tf_static', TF_STATIC_QOS, True)):
+                w = _Watched(name, 'tf2_msgs/msg/TFMessage')
+                w.mode, w.cls = 'feed', tf_cls
+                w.reader = stamp_reader(tf_cls)
+                self.watched[name] = w
+                self._feeds.append(self.create_subscription(
+                    tf_cls, name, lambda raw, w=w, st=static: self._on_tf(raw, w, st),
+                    qos, raw=True, event_callbacks=_no_events()))
+
+    def _on_tf(self, raw, w, static):
+        now = time.monotonic()
+        w.stats.arrivals.append((now, len(raw)))
+        w.last[0] = raw
+        self.tf.on_message(raw, static, now)
 
     def _on_rosout(self, raw, w):
         w.stats.arrivals.append((time.monotonic(), len(raw)))
@@ -212,6 +244,7 @@ class Monitor(Node):
 
     def _on_diag(self, raw, w):
         w.stats.arrivals.append((time.monotonic(), len(raw)))
+        w.last[0] = raw
         try:
             m = self._deserialize(raw, self._diag_cls)
         except Exception:
@@ -421,9 +454,13 @@ class Monitor(Node):
         arr_append, age_append, reader = w.stats.arrivals.append, w.stats.ages.append, w.reader
         mono = time.monotonic
         if reader is None:
+            last = w.last
+
             def cb(raw):
                 arr_append((mono(), len(raw)))
+                last[0] = raw
         else:
+            last = w.last
             if self._sim_time():
                 clock = self.get_clock()
 
@@ -435,6 +472,7 @@ class Monitor(Node):
             def cb(raw):
                 t = mono()
                 arr_append((t, len(raw)))
+                last[0] = raw
                 try:
                     st = reader(raw)
                 except Exception:
@@ -548,7 +586,11 @@ class Monitor(Node):
                     'composition_interfaces/srv/ListNodes' in types:
                 wanted[srv] = ('container', srv[:-len('/_container/list_nodes')])
         for srv in list(self.ns_clients):
-            if srv not in wanted:
+            # Parameter clients (opened on demand from the dashboard) live as long as
+            # their service exists; polled clients as long as they are wanted.
+            on_demand = srv.endswith(('/list_parameters', '/get_parameters'))
+            gone = srv not in self.ns_services if on_demand else srv not in wanted
+            if gone:
                 self.destroy_client(self.ns_clients.pop(srv)[0])
                 self.ns_pending.pop(srv, None)
         for srv, (kind, node) in wanted.items():
@@ -577,6 +619,124 @@ class Monitor(Node):
         else:
             for member in r.full_node_names:
                 self.container_members[member] = node
+
+    # ---------------------------------------------- on-demand requests ---
+    # The web server runs in its own threads; anything that touches ROS is queued here
+    # and run by the executor thread.
+    def request(self, kind, arg, timeout=4.0):
+        """Run a 'echo' or 'params' request on the ROS thread and wait for its result."""
+        job = {'kind': kind, 'arg': arg, 'done': threading.Event(), 'result': None}
+        if self.jobs.qsize() > 50:
+            return {'error': 'too many requests'}
+        self.jobs.put(job)
+        if not job['done'].wait(timeout):
+            return {'error': 'timed out after %g s' % timeout}
+        return job['result']
+
+    def _finish(self, job, result):
+        if not job['done'].is_set():
+            job['result'] = result
+            job['done'].set()
+
+    def _job_tick(self):
+        now = time.monotonic()
+        while True:
+            try:
+                job = self.jobs.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                if job['kind'] == 'echo':
+                    self._start_echo(job, now)
+                elif job['kind'] == 'params':
+                    self._start_params(job)
+                else:
+                    self._finish(job, {'error': 'unknown request'})
+            except Exception as e:  # a bad request must never hurt the monitor
+                self._finish(job, {'error': str(e)})
+        for name, p in list(self._echo_pending.items()):
+            if p['box'][0] is not None or now > p['deadline']:
+                self._echo_pending.pop(name)
+                try:
+                    self.destroy_subscription(p['sub'])
+                except Exception:
+                    pass
+                for job in p['jobs']:
+                    if p['box'][0] is None:
+                        self._finish(job, {'error': 'no message on %s within 3 s' % name})
+                    else:
+                        self._finish(job, self._render(p['cls'], p['box'][0], name, 'live'))
+
+    def _render(self, cls, raw, name, how):
+        msg = self._deserialize(raw, cls)
+        return {'topic': name, 'how': how, 'bytes': len(raw), 'message': msg_to_dict(msg)}
+
+    def _start_echo(self, job, now):
+        name = job['arg']
+        t = self.graph['topics'].get(name)
+        if t is None:
+            return self._finish(job, {'error': 'unknown topic %s' % name})
+        w = self.watched.get(name)
+        if w is not None and w.cls is not None and w.last[0] is not None and w.stats.arrivals \
+                and now - w.stats.arrivals[-1][0] < 10.0:
+            return self._finish(job, self._render(w.cls, w.last[0], name, 'cached'))
+        if name in self._echo_pending:
+            self._echo_pending[name]['jobs'].append(job)
+            return
+        cls = get_message(t['full_types'][0])
+        qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1,
+                         reliability=ReliabilityPolicy.BEST_EFFORT,
+                         durability=DurabilityPolicy.VOLATILE)
+        if t.get('latched'):
+            qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1,
+                             reliability=ReliabilityPolicy.RELIABLE,
+                             durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        box = [None]
+
+        def cb(raw):
+            if box[0] is None:
+                box[0] = raw
+        sub = self.create_subscription(cls, name, cb, qos, raw=True, event_callbacks=_no_events())
+        self._echo_pending[name] = {'sub': sub, 'box': box, 'cls': cls, 'jobs': [job],
+                                    'deadline': now + 3.0}
+
+    def _start_params(self, job):
+        node = job['arg']
+        if node not in self.graph['nodes']:
+            return self._finish(job, {'error': 'unknown node %s' % node})
+        lst = self._client(node + '/list_parameters', 'rcl_interfaces/srv/ListParameters')
+        get = self._client(node + '/get_parameters', 'rcl_interfaces/srv/GetParameters')
+        if not lst.service_is_ready() or not get.service_is_ready():
+            return self._finish(
+                job, {'error': 'parameter services of %s are not available' % node})
+        st = get_service('rcl_interfaces/srv/ListParameters')
+        fut = lst.call_async(st.Request(depth=0))
+
+        def on_list(f):
+            try:
+                names = sorted(f.result().result.names)
+            except Exception as e:
+                return self._finish(job, {'error': 'list_parameters failed: %s' % e})
+            if not names:
+                return self._finish(job, {'node': node, 'params': []})
+            gt = get_service('rcl_interfaces/srv/GetParameters')
+            f2 = get.call_async(gt.Request(names=names))
+
+            def on_get(g):
+                try:
+                    vals = g.result().values
+                except Exception as e:
+                    return self._finish(job, {'error': 'get_parameters failed: %s' % e})
+                self._finish(job, {'node': node, 'params': [
+                    [n, _param_value(v)] for n, v in zip(names, vals)]})
+            f2.add_done_callback(on_get)
+        fut.add_done_callback(on_list)
+
+    def _client(self, srv, type_name):
+        if srv not in self.ns_clients:
+            st = get_service(type_name)
+            self.ns_clients[srv] = (self.create_client(st, srv), st)
+        return self.ns_clients[srv][0]
 
     # ------------------------------------------------------------ procs --
     def _proc_tick(self):
@@ -714,7 +874,8 @@ class Monitor(Node):
         model = {'nodes': nodes, 'topics': topics, 'procs': procs, 'host': self.host.data,
                  'gone': dict(self.gone), 'env': self.env,
                  'uptime': now - self.started, 'self': selfinfo, 'log_counts': log_counts,
-                 'diagnostics': diag_list, 'expect': self.expect}
+                 'diagnostics': diag_list, 'expect': self.expect,
+                 'tf': self.tf.snapshot(now)}
         issues = self.health.evaluate(model, now)
         self.issues = issues
         snap = self._serialize(model, issues, now)
@@ -736,7 +897,11 @@ class Monitor(Node):
             d = {k: v for k, v in n.items() if k != 'prefixes'}
             d['pubs'] = sorted(set(n['pubs']))
             d['subs'] = sorted(set(n['subs']))
-            d['services'] = sum(1 for s in self.ns_services if s.startswith(n['name'] + '/'))
+            own = [s for s in self.ns_services if s.startswith(n['name'] + '/')]
+            d['services'] = len(own)
+            d['service_names'] = sorted(s for s in own if s.rsplit('/', 1)[-1] not in STD_SERVICES
+                                        and '/_action/' not in s)[:60]
+            d['actions'] = sorted({s.split('/_action/')[0] for s in own if '/_action/' in s})
             d['participant'] = sorted(p.hex() for p in n['prefixes'])[:1]
             r = d.get('restarts')
             if r:
@@ -773,6 +938,7 @@ class Monitor(Node):
                          'topics': len((self.expect or {}).get('topics', {}))},
             'top': [{'pid': p.pid, 'name': p.display_name(), 'cpu': round(p.cpu, 1),
                      'rss': p.rss, 'ros': p.is_ros} for p in self.ptable.top(8)],
+            'tf': m['tf'],
         }
 
     def _publish_diagnostics(self, issues, score):
@@ -911,6 +1077,40 @@ def normalize_baseline(data):
     out['nodes'] = sorted({fqn(n) for n in nodes if str(n).strip()})
     out['topics'] = topics
     return out
+
+
+def msg_to_dict(msg, max_items=32, max_str=2000, depth=0):
+    """Message -> JSON-friendly dict: long arrays and strings are shortened, with a note."""
+    if depth > 20:
+        return '...'
+    if hasattr(msg, 'get_fields_and_field_types'):
+        return {f: msg_to_dict(getattr(msg, f), max_items, max_str, depth + 1)
+                for f in msg.get_fields_and_field_types()}
+    if isinstance(msg, str):
+        return msg if len(msg) <= max_str else msg[:max_str] + '... (%d chars)' % len(msg)
+    if isinstance(msg, (bytes, bytearray)):
+        items = list(msg[:max_items])
+        return items + (['... (%d items)' % len(msg)] if len(msg) > max_items else [])
+    if isinstance(msg, (list, tuple)) or type(msg).__name__ in ('array', 'ndarray'):
+        n = len(msg)
+        items = [msg_to_dict(x, max_items, max_str, depth + 1) for x in list(msg[:max_items])]
+        return items + (['... (%d items)' % n] if n > max_items else [])
+    if isinstance(msg, (bool, int, float)) or msg is None:
+        return msg
+    try:
+        return msg.item()   # numpy scalar
+    except AttributeError:
+        return str(msg)
+
+
+def _param_value(v):
+    """rcl_interfaces/ParameterValue -> plain Python value."""
+    t = v.type
+    return {1: lambda: v.bool_value, 2: lambda: v.integer_value, 3: lambda: v.double_value,
+            4: lambda: v.string_value, 5: lambda: list(v.byte_array_value)[:64],
+            6: lambda: list(v.bool_array_value), 7: lambda: list(v.integer_array_value),
+            8: lambda: list(v.double_array_value),
+            9: lambda: list(v.string_array_value)}.get(t, lambda: None)()
 
 
 def _no_events():

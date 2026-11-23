@@ -1,4 +1,4 @@
-# Copyright 2026 PhysicalFleet
+# Copyright 2026 The Robot Monitor Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -120,9 +120,14 @@ class Resolver:
             out[self_name] = {'pid': ptable.self_pid, 'how': 'self', 'remote': False}
 
         # 1. GUID-embedded pids (calibrated against ourselves).
+        # The host part of a Fast DDS GUID is derived from the network interfaces when
+        # the process starts, so processes started before an interface change (VPN up,
+        # new DHCP address) carry a different host id on the same machine. A host-id
+        # mismatch is therefore only a hint: discovery data and local pids decide.
         cal = self.calibration
+        other_host = {}   # name -> (prefix, pid fragment) when the host id differs
+        mask = (1 << (8 * cal.width)) - 1 if cal is not None and cal.ok else 0
         if cal is not None and cal.ok:
-            mask = (1 << (8 * cal.width)) - 1
             for name, info in nodes.items():
                 if name in out:
                     continue
@@ -131,9 +136,8 @@ class Resolver:
                     if same is None:
                         continue
                     if not same:
-                        out[name] = {'pid': None, 'how': 'guid', 'remote': True,
-                                     'host_key': prefix[:cal.offset].hex()}
-                        break
+                        other_host.setdefault(name, (prefix, frag))
+                        continue
                     cands = [p for p in ros if (p.pid & mask) == frag]
                     if not cands:  # e.g. another user's process whose maps we can't read
                         cands = [p for p in ptable.procs.values()
@@ -166,6 +170,18 @@ class Resolver:
                             by_pid[p.pid] = p
                             out[name] = {'pid': p.pid, 'how': 'discovery', 'remote': False}
                         break
+
+        # 1c. Host id differed and discovery didn't settle it: a unique local ROS process
+        # with that pid is the answer; otherwise the node runs on another machine.
+        for name, (prefix, frag) in other_host.items():
+            if name in out:
+                continue
+            cands = [p for p in ros if (p.pid & mask) == frag]
+            if len(cands) == 1:
+                out[name] = {'pid': cands[0].pid, 'how': 'guid', 'remote': False}
+            else:
+                out[name] = {'pid': None, 'how': 'guid', 'remote': True,
+                             'host_key': prefix[:cal.offset].hex()}
 
         # 2. Command-line remaps, 3. launch_ros_<pid>, 4. composition containers.
         remap_index = {}

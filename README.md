@@ -29,6 +29,7 @@ ros2 launch robot_monitor demo.launch.py
 | **A node eating a whole core** | `/planner is saturating a CPU core (96%)` |
 | **Memory leaks** | `Memory of /mapper keeps growing (+12 MB/min)` |
 | **Crashes and respawns** | `Node /driver restarted 3 times` · `Node /camera disappeared` |
+| **TF problems** | `TF frame base_link has 2 parents: map, odom` · `Transform odom → base_link stopped updating` |
 | **Clock problems between machines** | `/odom is stamped in the future` (clocks out of sync) |
 | **Hardware and OS** | under-voltage (Raspberry Pi), throttling, temperature, memory, disk full |
 | **Your own diagnostics and logs** | every `/diagnostics` WARN/ERROR and nodes that log errors, in one place |
@@ -40,8 +41,10 @@ Rules are conservative on purpose: event-driven topics are never called "stale",
 
 - **Overview**: health score, issues with a fix for each, busiest processes and topics, recent crashes.
 - **Nodes**: every node with its PID, CPU (and history), memory, publishers and subscribers, lifecycle state, restarts. Works for composable nodes too.
-- **Topics**: rate, rate history, bandwidth, message size, latency (header stamp → arrival), publishers → subscribers, QoS per endpoint.
+- **Topics**: rate, rate history, bandwidth, message size, latency (header stamp → arrival), publishers → subscribers, QoS per endpoint, and the latest message on request.
 - **Graph**: a readable left-to-right graph of nodes and topics; broken QoS links are drawn in red. Click anything for details.
+- **TF**: the live TF tree with each frame's parent, rate and last update; static frames marked. Flags frames with two parents, transforms that stopped updating and trees that are split apart.
+- **Node details**: process, CPU and memory history, publishers and subscribers, services and actions, and the node's parameters (read on request).
 - **Logs**: live `/rosout` from every node, filter by level, node or text.
 - **Diagnostics**: everything published on `/diagnostics`, grouped.
 - **Share report**: one click gives a Markdown health report to paste into a GitHub issue or ROS Discourse question.
@@ -50,6 +53,8 @@ Rules are conservative on purpose: event-driven topics are never called "stale",
 ![Overview](docs/overview.png)
 
 ![Graph view](docs/graph.png)
+
+![TF tree](docs/tf.png)
 
 ## In the terminal and in CI
 
@@ -98,14 +103,14 @@ Node(package='robot_monitor', executable='robot_monitor', name='robot_monitor')
   - DDS discovery announcements (SPDP), which list the UDP ports each participant listens on, matched against the sockets each process owns. This works for any DDS vendor, including Cyclone DDS, and gives the IP address of nodes on other machines. The listener only reads multicast copies and never sends anything;
   - `__node:=` remaps on command lines, composition containers (`_container/list_nodes`), ROS log files, executable names, and nodes that share a DDS participant (this is how it handles Zenoh).
 - **Topic statistics without deserializing.** Robot Monitor subscribes with raw (serialized) messages: rate, bandwidth and size come from arrival times and byte counts, and latency comes from the header stamp read directly from the CDR bytes. That is a few microseconds of work per message, even for images and point clouds.
-- **It protects your robot.** Large or fast topics are sampled (a few seconds in every ten) instead of received continuously, and so is everything above a total message budget (`max_total_rate_hz`). When nobody has the dashboard open it refreshes every 3 s instead of every second. It shows its own CPU and memory in the footer. On a Raspberry Pi 4 running a 10-node robot arm, it uses about 5–10% of one core.
-- **Read-only.** It never calls a service that changes anything, never sets parameters and never publishes anything except its findings on `/diagnostics`.
+- **It protects your robot.** Large or fast topics are sampled (a few seconds in every ten) instead of received continuously, and so is everything above a total message budget (`max_total_rate_hz`). When nobody has the dashboard open it refreshes every 3 s instead of every second. It shows its own CPU and memory in the footer. On a Raspberry Pi 4 running a 10-node robot arm it uses about 10% of one core (an 8-hour run averaged 9.2%), with memory steady at under 90 MB.
+- **Read-only.** It never calls a service that changes anything, never sets parameters and never publishes anything except its findings on `/diagnostics`. Parameters and the latest message are read only when you ask for them in the dashboard.
 
 ## Integrations
 
 - **`/diagnostics`**: findings are published as `diagnostic_msgs/DiagnosticArray` (`robot_monitor: …`), so they appear in `rqt_robot_monitor`, `diagnostic_aggregator` and Foxglove. Disable with `publish_diagnostics:=false`.
 - **Prometheus**: `http://<robot>:9191/metrics` (health score, issues, topic rates and bandwidth, per-node CPU and memory, host metrics).
-- **JSON**: `http://<robot>:9191/api/snapshot`, plus `/api/logs`, `/api/report?format=md`.
+- **JSON**: `http://<robot>:9191/api/snapshot`, plus `/api/logs`, `/api/report?format=md`, `/api/echo?topic=<name>` (latest message) and `/api/params?node=<name>`.
 
 ## Parameters
 
