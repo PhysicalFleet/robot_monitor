@@ -137,4 +137,6 @@ Issues and pull requests are welcome. Run the tests with `colcon test --packages
 
 ## License and maintainers
 
-Apache-2.0. Developed and maintained by [PhysicalFleet](https://physicalfleet.io).
+Apache-2.0. Developed and maintained by [PhysicalFleet](https://physicalfleet.io/).
+
+PhysicalFleet builds infrastructure to deploy, monitor, debug and continuously improve intelligent machines, from the first device to millions: humanoids and robot dogs, arms and tractors, delivery bots and excavators, and the models they run, from RL policies to VLAs. The platform covers fleet management, observability, alerts and anomaly detection, over-the-air updates and security for machines in production. Robot Monitor is a free, standalone tool from the same team: it needs no account and connects to nothing.
