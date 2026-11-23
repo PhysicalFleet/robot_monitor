@@ -197,14 +197,14 @@ class Monitor(Node):
             w.mode = 'feed'
             self.watched['/rosout'] = w
             self._feeds.append(self.create_subscription(
-                self._rosout_cls, '/rosout', lambda raw: self._on_rosout(raw, w),
+                self._rosout_cls, '/rosout', lambda raw, w=w: self._on_rosout(raw, w),
                 FEED_QOS, raw=True, event_callbacks=_no_events()))
         if self._diag_cls is not None:
             w = _Watched('/diagnostics', 'diagnostic_msgs/msg/DiagnosticArray')
             w.mode = 'feed'
             self.watched['/diagnostics'] = w
             self._feeds.append(self.create_subscription(
-                self._diag_cls, '/diagnostics', lambda raw: self._on_diag(raw, w),
+                self._diag_cls, '/diagnostics', lambda raw, w=w: self._on_diag(raw, w),
                 FEED_QOS, raw=True, event_callbacks=_no_events()))
         tf_cls = get_message('tf2_msgs/msg/TFMessage') if get_message else None
         if tf_cls is not None:

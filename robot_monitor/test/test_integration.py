@@ -59,6 +59,10 @@ def system(tmp_path_factory):
     sub_node = rclpy.create_node('itest_sub')
     sub_node.create_subscription(Imu, '/itest/imu', lambda m: None,
                                  QoSProfile(depth=5, reliability=ReliabilityPolicy.RELIABLE))
+    from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
+    diag_pub = sub_node.create_publisher(DiagnosticArray, '/diagnostics', 10)
+    sub_node.create_timer(0.1, lambda: diag_pub.publish(DiagnosticArray(status=[
+        DiagnosticStatus(level=DiagnosticStatus.WARN, name='itest/battery', message='low')])))
     ex, _ = spin_in_thread(mon)
     from rclpy.executors import SingleThreadedExecutor
     ex2 = SingleThreadedExecutor()
@@ -91,6 +95,15 @@ def test_rate_latency_and_qos(system):
     assert t['qos_issues'] and t['qos_issues'][0]['sub'] == '/itest_sub'
     assert any(i['id'].startswith('qos:/itest/imu') and i['severity'] == 'error'
                for i in mon.snapshot['issues'])
+
+
+def test_feed_topics_count_their_own_messages(system):
+    mon, _, _ = system
+    t = {x['name']: x for x in mon.snapshot['topics']}
+    assert t['/diagnostics']['stats']['hz'] > 3, t['/diagnostics']['stats']
+    assert 'itest/battery' in {d['name'] for d in mon.snapshot['diagnostics']}
+    if '/tf_static' in t and t['/tf_static'].get('stats'):
+        assert t['/tf_static']['stats']['hz'] == 0
 
 
 def test_node_mapped_to_child_process(system):

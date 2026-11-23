@@ -179,20 +179,22 @@ class Planner(Node):
 
 
 class Mapper(Node):
-    """BUG: keeps every message it ever received (memory leak)."""
+    """BUG: keeps every message it ever received (memory leak, capped at ~270 MB)."""
 
     def __init__(self):
         super().__init__('mapper')
         from nav_msgs.msg import Odometry as Odom
-        self.keep = []
+        self.msgs, self.blobs = [], []
         self.create_subscription(Odom, '/odom', self.on_odom, 10)
         self.create_timer(1.0, self.grow)
 
     def on_odom(self, m):
-        self.keep.append(m)
+        if len(self.msgs) < 30000:   # the cap keeps a forgotten demo from hurting the machine
+            self.msgs.append(m)
 
     def grow(self):
-        self.keep.append(bytearray(600 * 1024))  # ~36 MB/min
+        if len(self.blobs) < 420:    # ~36 MB/min up to ~250 MB
+            self.blobs.append(bytearray(600 * 1024))
 
 
 class Imu(Node):
