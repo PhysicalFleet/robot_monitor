@@ -1,5 +1,7 @@
 # Robot Monitor
 
+> Building robots on ROS, I kept losing hours to the same question: which nodes are actually running, and what's wrong with them? A subscriber gets nothing, a topic quietly slows down, a node eats a whole core, and finding out means juggling `ros2 node list`, `ros2 topic hz` and a dozen terminals. So I built the one screen I always wanted: open it, see everything that runs and everything that's broken, with a fix. Solved once and for all :)
+
 **See what your ROS 2 robot is really doing, in one command.**
 
 Robot Monitor finds every node, maps it to the process that runs it (CPU, memory, restarts), measures every topic (rate, bandwidth, latency), and tells you in plain words what is broken and how to fix it: QoS mismatches, mistyped topic names, duplicate node names, stalled sensors, CPU-starved nodes, memory leaks, under-voltage. It runs on the robot, opens a live dashboard in your browser, and needs no configuration, no account and no internet.
