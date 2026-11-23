@@ -581,7 +581,7 @@ function drawerNode(name) {
     ['CPU', p ? cpuCell(p.cpu) : null], ['Memory', p ? fmtBytes(p.rss) + (p.rss_slope != null ? ' <span class="muted">(' + (p.rss_slope >= 0 ? '+' : '') + p.rss_slope.toFixed(2) + ' MB/min)</span>' : '') : null],
     ['GPU memory', p && p.gpu_mem ? fmtBytes(p.gpu_mem) : null],
     ['Threads', p ? p.threads : null], ['Open files', p && p.fds != null ? p.fds : null], ['Uptime', p ? fmtDur(p.uptime) : null],
-    ['User', p ? esc(p.user || '') : null], ['Restarts', n.restarts ? n.restarts.count + ' (last ' + fmtDur(n.restarts.ago_s) + ' ago)' : null],
+    ['Runs as', p ? esc(p.user || '') : null], ['Restarts', n.restarts ? n.restarts.count + ' (last ' + fmtDur(n.restarts.ago_s) + ' ago)' : null],
     ['Same process as', p && p.nodes.length > 1 ? p.nodes.filter((x) => x !== name).map((x) => '<a class="subj" data-subj="' + esc(x) + '">' + esc(x) + '</a>').join(' ') : null],
     ['Container', n.container ? esc(n.container) : null], ['Services', n.services],
   ]);
@@ -661,7 +661,7 @@ function drawerProc(pid) {
   $('d-title').textContent = p ? p.name : 'process ' + pid;
   $('d-sub').textContent = 'ROS process without a node';
   if (!p) { $('d-body').innerHTML = '<div class="empty">Process exited.</div>'; return; }
-  $('d-body').innerHTML = kv([['PID', p.pid], ['CPU', cpuCell(p.cpu)], ['Memory', fmtBytes(p.rss)], ['Threads', p.threads], ['Uptime', fmtDur(p.uptime)], ['User', esc(p.user || '')]]) +
+  $('d-body').innerHTML = kv([['PID', p.pid], ['CPU', cpuCell(p.cpu)], ['Memory', fmtBytes(p.rss)], ['Threads', p.threads], ['Uptime', fmtDur(p.uptime)], ['Runs as', esc(p.user || '')]]) +
     '<h3>CPU (last minute)</h3>' + bigChart(p.cpu_hist, '%') + '<h3>Command</h3><pre class="cmd">' + esc(p.cmd) + '</pre>';
 }
 function drawerHost() {

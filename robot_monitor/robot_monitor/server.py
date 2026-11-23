@@ -102,7 +102,8 @@ def make_handler(monitor, allow_write=True):
                 return self._send(403, '{"error":"cross-origin request refused"}')
             if self.path == '/api/baseline' and allow_write:
                 data = monitor.save_baseline()
-                return self._send(200, json.dumps({'ok': True, 'file': monitor.p_baseline,
+                from .monitor import tilde
+                return self._send(200, json.dumps({'ok': True, 'file': tilde(monitor.p_baseline),
                                                    'baseline': data}))
             self._send(404, '{"error":"not found"}')
 

@@ -141,7 +141,8 @@ class Monitor(Node):
                 self.resolver.spdp = spdp
         self.health = HealthEngine()
         self.full_name = self.get_fully_qualified_name()
-        self.env = {k: os.environ.get(k, '') for k in ENV_KEYS}
+        self.env = {k: tilde(os.environ.get(k, '')) for k in ENV_KEYS}
+        self.own_user = _own_user()
 
         self.watched = {}           # topic -> _Watched
         self._ep_cache = {}         # topic -> {'key', 't'}: endpoint info, refetched on change
@@ -823,10 +824,12 @@ class Monitor(Node):
             growth = (h[-1][1] - min(r for _, r in h)) / 1048576 if len(h) > 1 else 0
             procs[pr.pid] = {
                 'pid': pr.pid, 'key': '%d:%d' % (pr.pid, pr.start), 'name': pr.display_name(),
-                'cmd': redact_cmdline(pr.cmdline)[:600], 'exe': pr.exe,
+                'cmd': tilde(redact_cmdline(pr.cmdline))[:600], 'exe': tilde(pr.exe),
                 'nodes': sorted(node_pids.get(pr.pid, [])), 'cpu': round(pr.cpu, 1),
                 'rss': pr.rss, 'threads': pr.threads, 'fds': pr.fds, 'state': pr.state,
-                'uptime': round(pr.uptime(self.ptable.btime)), 'user': pr.user,
+                'uptime': round(pr.uptime(self.ptable.btime)),
+                # Only worth showing when it differs from ours (root, another account).
+                'user': pr.user if pr.user != self.own_user else None,
                 'ppid': pr.ppid, 'gpu_mem': self.host.gpu_mem_of(pr.pid),
                 'cpu_hist': list(pr.cpu_hist)[-60:],
                 'rss_slope': None if slope is None else round(slope, 2),
@@ -933,7 +936,7 @@ class Monitor(Node):
             'discovery_listener': ('on' if self.resolver.spdp is not None else 'off'),
             'calibration': self.resolver.calibration.describe()
             if self.resolver.calibration else 'pending',
-            'baseline': {'file': self.p_baseline, 'loaded': bool(self.expect),
+            'baseline': {'file': tilde(self.p_baseline), 'loaded': bool(self.expect),
                          'nodes': len((self.expect or {}).get('nodes', [])),
                          'topics': len((self.expect or {}).get('topics', {}))},
             'top': [{'pid': p.pid, 'name': p.display_name(), 'cpu': round(p.cpu, 1),
@@ -1025,6 +1028,24 @@ class Monitor(Node):
 
 _SECRET_RE = re.compile(
     r'(pass(word|wd)?|token|secret|api[_-]?key|auth|credential|private[_-]?key)', re.IGNORECASE)
+
+
+_HOME = os.path.expanduser('~').rstrip('/')
+
+
+def tilde(text):
+    """Show paths under our home directory as ~/... so screens and reports stay generic."""
+    if not text or not _HOME or _HOME == '/':
+        return text
+    return text.replace(_HOME + '/', '~/').replace(_HOME + ' ', '~ ') if _HOME in text else text
+
+
+def _own_user():
+    try:
+        import pwd
+        return pwd.getpwuid(os.getuid()).pw_name
+    except Exception:
+        return None
 
 
 def redact_cmdline(args):

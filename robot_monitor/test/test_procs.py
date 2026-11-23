@@ -68,3 +68,13 @@ def test_redact_cmdline():
                           '-p', 'rate:=10', '--verbose'])
     assert 'abc' not in out and 'xyz' not in out and 'hunter2' not in out
     assert 'rate:=10' in out and '--verbose' in out and '--token ***' in out
+
+
+def test_tilde_hides_home():
+    from robot_monitor.monitor import tilde
+    home = os.path.expanduser('~')
+    path = home + '/.ros/robot_monitor/baseline.yaml'
+    assert tilde(path) == '~/.ros/robot_monitor/baseline.yaml'
+    assert tilde('/usr/bin/python3 ' + home + '/ws/install/x') == '/usr/bin/python3 ~/ws/install/x'
+    assert tilde('/opt/ros/jazzy/bin/ros2') == '/opt/ros/jazzy/bin/ros2'
+    assert tilde('') == '' and tilde(None) is None

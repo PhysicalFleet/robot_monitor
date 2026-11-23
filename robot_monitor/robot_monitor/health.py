@@ -328,8 +328,8 @@ class HealthEngine:
                       'The board reports its supply voltage is too low. This causes random '
                       'reboots, USB devices dropping out (cameras, motor controllers) and '
                       'SD-card corruption.',
-                      'Use a stronger power supply (Raspberry Pi 4/5: official 5.1 V 3 A / 5 A) '
-                      'and power motors separately.', ['host']))
+                      'Use a stronger power supply (for a Raspberry Pi, the official 5.1 V '
+                      'supply) and power motors and servos separately.', ['host']))
         elif th.get('undervoltage_since_boot'):
             add(Issue('host:undervoltage_past', 'warn', 'power',
                       'Under-voltage happened since boot',
