@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Robot Monitor</title>
+<meta name="description" content="Live health of your ROS 2 robot: nodes, topics, QoS, processes and host.">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/app.css">
+<script>try{var t=localStorage.getItem('ns-theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}</script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="var(--accent)" stroke-width="2"/><path d="M3.5 12h4l2-4.5 3.5 9 2.2-4.5h5.3" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Robot Monitor
+  </div>
+  <div class="chips" id="chips"></div>
+  <div class="spacer"></div>
+  <span class="live off" id="live"><i></i><span>connecting</span></span>
+  <button class="btn" id="btn-baseline" title="Remember this robot's nodes and topic rates as normal">Baseline</button>
+  <button class="btn" id="btn-report" title="A Markdown report to paste into an issue or chat">Share report</button>
+  <button class="icon-btn" id="btn-theme" title="Theme" aria-label="Toggle theme">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+  </button>
+  <div class="score" id="score"></div>
+</header>
+<section class="host" id="host"></section>
+<nav class="tabs" id="tabs"></nav>
+<main id="main"><div class="empty">Waiting for the first snapshot…</div></main>
+<footer class="foot">
+  <span id="foot-ver">Robot Monitor</span>
+  <span>·</span>
+  <a href="https://github.com/PhysicalFleet/robot_monitor" target="_blank" rel="noopener">GitHub</a>
+  <a href="https://github.com/PhysicalFleet/robot_monitor/issues" target="_blank" rel="noopener">Report a bug</a>
+  <a href="/metrics" target="_blank">Prometheus</a>
+  <a href="/api/snapshot" target="_blank">JSON API</a>
+  <span class="spacer"></span>
+  <span id="foot-self" class="faint"></span>
+  <a class="pf" href="#" id="about-link">Open source, built by PhysicalFleet</a>
+</footer>
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer"><div class="hd"><div style="flex:1;min-width:0"><div class="ttl" id="d-title"></div><div class="sub" id="d-sub"></div></div><button class="icon-btn" id="d-close" aria-label="Close">✕</button></div><div class="bd" id="d-body"></div></aside>
+<div class="modal" id="modal"><div class="box" id="modal-box"></div></div>
+<div class="toast" id="toast"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

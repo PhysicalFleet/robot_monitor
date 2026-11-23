@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>robot_monitor</name>
+  <version>0.1.0</version>
+  <description>
+    Zero-config health monitor for ROS 2: discovers every node and maps it to its
+    process (CPU, memory, restarts) on any middleware, measures topic rates,
+    bandwidth and latency without deserializing, finds QoS mismatches, type
+    mismatches, mistyped topic names and duplicate node names, and explains each
+    problem with a fix. Includes a live web dashboard (works offline), a
+    `ros2 monitor check` CI command, a terminal view and Prometheus metrics.
+  </description>
+  <maintainer email="opensource@physicalfleet.io">PhysicalFleet</maintainer>
+  <license>Apache-2.0</license>
+  <url type="website">https://github.com/PhysicalFleet/robot_monitor</url>
+  <url type="repository">https://github.com/PhysicalFleet/robot_monitor</url>
+  <url type="bugtracker">https://github.com/PhysicalFleet/robot_monitor/issues</url>
+  <author>PhysicalFleet</author>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>ros2cli</exec_depend>
+  <exec_depend>rosidl_runtime_py</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>diagnostic_msgs</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>composition_interfaces</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

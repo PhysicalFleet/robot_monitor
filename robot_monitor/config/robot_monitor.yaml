@@ -1,0 +1,19 @@
+# Robot Monitor parameters. Everything works with no configuration; these are knobs.
+robot_monitor:
+  ros__parameters:
+    port: 9191                 # web dashboard port (tries the next 9 if busy)
+    host: "0.0.0.0"            # "127.0.0.1" to only allow this machine
+    refresh_period: 1.0        # seconds between snapshots while the dashboard is open
+    idle_period: 3.0           # seconds between snapshots when nobody is watching
+    graph_period: 2.0          # seconds between graph scans
+    monitor_topics: true       # subscribe to topics to measure rate/bandwidth/latency
+    exclude_topics: [""]       # regexes of topics never subscribed to, e.g. ["^/camera/.*raw$"]
+    sample_heavy: true         # sample big/fast topics instead of receiving every message
+    heavy_bandwidth_mb: 8.0    # MB/s above which a topic is sampled
+    max_rate_hz: 1500.0        # Hz above which a topic is sampled
+    max_total_rate_hz: 1000.0  # total msg/s received; above it the busiest topics are sampled
+    sample_on_s: 2.0
+    sample_off_s: 8.0
+    listen_discovery: true     # read DDS discovery multicast to map nodes to processes (any DDS vendor)
+    publish_diagnostics: true  # publish findings on /diagnostics (rqt_robot_monitor, Foxglove...)
+    baseline_file: "~/.ros/robot_monitor/baseline.yaml"

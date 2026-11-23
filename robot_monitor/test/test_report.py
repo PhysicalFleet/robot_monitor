@@ -1,0 +1,53 @@
+# Copyright 2026 PhysicalFleet
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from robot_monitor import report
+
+SNAP = {
+    'version': '0.1.0', 'ts': 0, 'score': 82,
+    'host': {'hostname': 'robot', 'supported': True, 'cpu': 10, 'mem_pct': 40, 'ncpu': 4,
+             'temps': [{'name': 'cpu', 'c': 50}], 'throttle': {'undervoltage_now': False}},
+    'env': {'ROS_DISTRO': 'jazzy'},
+    'issues': [{'id': 'x', 'severity': 'error', 'title': 'Broken "thing"', 'detail': 'd',
+                'fix': 'f', 'subjects': ['/a']}],
+    'nodes': [{'name': '/a', 'pid': 5, 'cpu': 1.5, 'rss': 1000, 'pubs': ['/t'], 'subs': [],
+               'hidden': False, 'self': False}],
+    'topics': [{'name': '/t', 'types': ['std_msgs/String'], 'pubs': [{}], 'subs': [],
+                'stats': {'hz': 10.0, 'bw': 100}, 'hidden': False, 'system': False}],
+}
+
+
+def test_markdown():
+    md = report.render(SNAP, fmt='md')
+    assert '# ROS 2 health report' in md and 'Broken "thing"' in md
+    assert '| /a | 5 | 1.5 |' in md
+    assert 'PhysicalFleet' in md
+
+
+def test_text():
+    txt = report.render(SNAP, fmt='text')
+    assert 'ERROR' in txt and '/t' in txt
+
+
+def test_prometheus():
+    p = report.prometheus(SNAP)
+    assert 'ros_health_score 82' in p
+    assert 'ros_topic_rate_hz{topic="/t"} 10' in p
+    assert 'ros_node_cpu_percent{node="/a",pid="5"} 1.5' in p
+    assert 'host_undervoltage 0' in p
+
+
+def test_empty():
+    assert 'no data' in report.render({})
+    assert report.prometheus({}) == ''

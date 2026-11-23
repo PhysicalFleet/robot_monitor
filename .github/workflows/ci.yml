@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.distro }} / ${{ matrix.rmw }}
+    runs-on: ${{ matrix.runner }}
+    container: ros:${{ matrix.distro }}-ros-base
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [humble, jazzy, kilted, lyrical, rolling]
+        rmw: [rmw_fastrtps_cpp, rmw_cyclonedds_cpp]
+        runner: [ubuntu-latest]
+        include:
+          - distro: jazzy
+            rmw: rmw_zenoh_cpp
+            runner: ubuntu-latest
+          - distro: jazzy
+            rmw: rmw_fastrtps_cpp
+            runner: ubuntu-24.04-arm
+    env:
+      RMW_IMPLEMENTATION: ${{ matrix.rmw }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src/robot_monitor
+      - name: Install dependencies
+        run: |
+          apt-get update
+          rosdep update --rosdistro "$ROS_DISTRO"
+          rosdep install --from-paths src --ignore-src -y --rosdistro "$ROS_DISTRO"
+          apt-get install -y --no-install-recommends \
+            "ros-$ROS_DISTRO-$(echo ${{ matrix.rmw }} | tr _ -)" python3-colcon-common-extensions
+      - name: Build
+        run: |
+          source /opt/ros/$ROS_DISTRO/setup.bash
+          colcon build --packages-select robot_monitor
+      - name: Test
+        run: |
+          source /opt/ros/$ROS_DISTRO/setup.bash
+          if [ "$RMW_IMPLEMENTATION" = rmw_zenoh_cpp ]; then
+            (ros2 run rmw_zenoh_cpp rmw_zenohd > /dev/null 2>&1 &); sleep 2
+          fi
+          colcon test --packages-select robot_monitor --event-handlers console_direct+
+          colcon test-result --verbose
