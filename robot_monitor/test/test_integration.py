@@ -62,7 +62,10 @@ def system(tmp_path_factory):
     from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
     diag_pub = sub_node.create_publisher(DiagnosticArray, '/diagnostics', 10)
     sub_node.create_timer(0.1, lambda: diag_pub.publish(DiagnosticArray(status=[
-        DiagnosticStatus(level=DiagnosticStatus.WARN, name='itest/battery', message='low')])))
+        DiagnosticStatus(level=DiagnosticStatus.WARN, name='itest/battery', message='low'),
+        # what another Robot Monitor on the network publishes: must not be read back
+        DiagnosticStatus(level=DiagnosticStatus.ERROR, name='robot_monitor: summary',
+                         hardware_id='robot_monitor@other-machine', message='x')])))
     ex, _ = spin_in_thread(mon)
     from rclpy.executors import SingleThreadedExecutor
     ex2 = SingleThreadedExecutor()
@@ -101,7 +104,10 @@ def test_feed_topics_count_their_own_messages(system):
     mon, _, _ = system
     t = {x['name']: x for x in mon.snapshot['topics']}
     assert t['/diagnostics']['stats']['hz'] > 3, t['/diagnostics']['stats']
-    assert 'itest/battery' in {d['name'] for d in mon.snapshot['diagnostics']}
+    names = {d['name'] for d in mon.snapshot['diagnostics']}
+    assert 'itest/battery' in names
+    assert not any(n.startswith('robot_monitor:') for n in names), names
+    assert not any('robot_monitor:' in i['title'] for i in mon.snapshot['issues'])
     if '/tf_static' in t and t['/tf_static'].get('stats'):
         assert t['/tf_static']['stats']['hz'] == 0
 

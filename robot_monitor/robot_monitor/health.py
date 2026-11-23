@@ -34,6 +34,8 @@ SYSTEM_TOPICS = {'/rosout', '/parameter_events', '/clock', '/tf', '/tf_static',
 
 
 def is_hidden_node(full):
+    if '_NODE_NAME_UNKNOWN_' in full or '_NODE_NAMESPACE_UNKNOWN_' in full:
+        return True   # DDS endpoints that ROS can't attribute to a node
     base = full.rsplit('/', 1)[-1]
     return base.startswith('_') or base.startswith('launch_ros_') \
         or base.startswith('transform_listener_impl_')
@@ -150,7 +152,7 @@ class HealthEngine:
                       'same setup file, same ROS_DOMAIN_ID and RMW). Across machines, check that '
                       'multicast works or configure a discovery server / static peers.'))
         for name, n in nodes.items():
-            if n.get('count', 1) > 1:
+            if n.get('count', 1) > 1 and not n.get('hidden'):
                 add(Issue('dup:' + name, 'error', 'graph',
                           '%d nodes share the name %s' % (n['count'], name),
                           'ROS 2 allows this, but parameters, services, logs and tools then '
@@ -168,7 +170,7 @@ class HealthEngine:
                           'Check its log (Logs tab) and its supervisor (launch, systemd, '
                           'container) for a crash.', [name]))
         for name, n in nodes.items():
-            if n.get('restarts'):
+            if n.get('restarts') and not n.get('hidden'):
                 r = n['restarts']
                 if now - r['last'] < 900:
                     add(Issue('restart:' + name, 'warn', 'graph',
@@ -207,6 +209,8 @@ class HealthEngine:
                           'Make every publisher and subscriber of this topic use the same '
                           'message type, or rename one of the topics.', [t]))
             for pair in d.get('qos_issues', []):
+                if is_hidden_node(pair['pub']) or is_hidden_node(pair['sub']):
+                    continue
                 sev = 'error' if pair['level'] == 'error' else 'warn'
                 add(Issue('qos:%s:%s:%s' % (t, pair['pub'], pair['sub']), sev, 'qos',
                           'QoS mismatch on %s: %s → %s' % (t, pair['pub'], pair['sub']),

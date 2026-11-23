@@ -21,8 +21,7 @@ ros2 launch robot_monitor demo.launch.py
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
-ROLES = ['camera', 'lidar', 'slam', 'detector', 'odometry', 'planner', 'mapper', 'imu',
-         'driver', 'driver', 'arm']
+from robot_monitor.demo import DEMO_PROCESSES as ROLES
 
 
 def generate_launch_description():

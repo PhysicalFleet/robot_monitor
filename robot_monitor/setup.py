@@ -21,7 +21,7 @@ package_name = 'robot_monitor'
 
 setup(
     name=package_name,
-    version='0.2.0',
+    version='0.2.1',
     packages=find_packages(exclude=['test']),
     package_data={package_name: ['web/*']},
     include_package_data=True,

@@ -8,16 +8,34 @@ Robot Monitor finds every node, maps it to the process that runs it (CPU, memory
 
 ![Robot Monitor finding a QoS mismatch, a CPU-saturated node and more on a demo robot](docs/demo.gif)
 
+## Try it in 30 seconds
+
+No build, no install, no configuration. Any machine with ROS 2 works, even a minimal `ros-core` install:
+
 ```bash
-ros2 run robot_monitor robot_monitor
+source /opt/ros/$ROS_DISTRO/setup.bash
+git clone https://github.com/PhysicalFleet/robot_monitor.git
+python3 robot_monitor/run.py demo
+```
+
+Open http://localhost:9191: a demo robot full of typical bugs is running, and Robot Monitor has already found them.
+
+On your own robot, drop `demo`. It finds your nodes by itself:
+
+```bash
+python3 robot_monitor/run.py
 # Robot Monitor dashboard: http://localhost:9191  http://192.168.1.42:9191
 ```
 
-Try it on a demo robot full of typical bugs:
+Open the second address from your laptop to watch a robot on your network. `python3 robot_monitor/run.py check` prints a one-shot report in the terminal instead.
 
-```bash
-ros2 launch robot_monitor demo.launch.py
-```
+### Zero friction by design
+
+- **Nothing to configure.** No node list, no topic list, no expected rates: it discovers the running system and learns what normal looks like.
+- **No changes to your code.** No library to link, no wrapper, no launch-file edits. It watches from the outside, like `ros2 topic` does.
+- **Any ROS 2 setup.** Humble, Jazzy, Kilted, Lyrical and Rolling; Fast DDS, Cyclone DDS and Zenoh; apt, source builds, RoboStack or Docker. It uses whatever ROS environment you sourced, with the same `ROS_DOMAIN_ID` and middleware as your robot.
+- **Nothing extra to install.** Plain Python on top of the ROS packages every install has: no pip packages, no internet, no account.
+- **Safe to leave running.** Read-only, about 10% of one Raspberry Pi 4 core, and it samples heavy topics instead of slowing your robot down.
 
 ## What it finds
 
@@ -71,7 +89,11 @@ ros2 monitor                       # the web dashboard
 
 `check` is made for launch tests and CI: start your stack, run `ros2 monitor check --baseline robot.yaml`, and the job fails if a node is missing, a topic is slow or a QoS mismatch appears.
 
-## Install
+## Install as a ROS package
+
+`run.py` is all you need to use it. Install it as a package to get the `ros2 monitor` command and launch files:
+
+From apt (once released): `sudo apt install ros-$ROS_DISTRO-robot-monitor`.
 
 From source (any ROS 2 distro from Humble on):
 
@@ -83,8 +105,6 @@ colcon build --packages-select robot_monitor
 source install/setup.bash
 ros2 run robot_monitor robot_monitor
 ```
-
-From apt (once released): `sudo apt install ros-$ROS_DISTRO-robot_monitor`.
 
 Run it next to your robot's launch file:
 

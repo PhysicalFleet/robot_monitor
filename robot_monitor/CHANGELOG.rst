@@ -2,6 +2,18 @@
 Changelog for package robot_monitor
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.2.1 (2026-11-23)
+------------------
+* ``run.py`` at the repository root: run the dashboard, the demo, ``check`` and ``top``
+  straight from a git clone, without building.
+* Works on a minimal ``ros-core`` install: the TF tab is skipped when ``tf2_msgs`` is missing
+  instead of failing at startup.
+* Several Robot Monitors on one network no longer re-report each other's findings from
+  ``/diagnostics``.
+* No issues for hidden helper nodes or DDS endpoints that ROS can't name.
+* Use ``logger.warning`` (``warn`` no longer exists in newer rclpy).
+* Readable names for ``python -c`` / ``python -m`` processes; unique node names for CLI runs.
+
 0.2.0 (2026-11-23)
 ------------------
 * TF tab: the live TF tree from /tf and /tf_static with per-frame rates and last update;

@@ -53,6 +53,14 @@ def test_duplicate_and_types():
     assert 'dup:/a' in got and 'types:/x' in got
 
 
+def test_unknown_and_hidden_nodes_make_no_noise():
+    unknown = '_NODE_NAMESPACE_UNKNOWN_/_NODE_NAME_UNKNOWN_'
+    q = {'pub': '/lidar', 'sub': unknown, 'level': 'error', 'reason': 'r', 'fix': 'f'}
+    m = model(nodes={'/_cli_1': node('/_cli_1', count=2, hidden=True), '/lidar': node('/lidar')},
+              topics={'/scan': topic('/scan', ['/lidar'], qos_issues=[q])})
+    assert not HealthEngine().evaluate(m, now=0)
+
+
 def test_dangling_with_suggestion_after_grace():
     eng = HealthEngine()
     m = model(nodes={'/a': node('/a'), '/det': node('/det')},

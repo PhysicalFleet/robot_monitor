@@ -53,3 +53,28 @@ jobs:
           fi
           colcon test --packages-select robot_monitor --event-handlers console_direct+
           colcon test-result --verbose
+
+  zero-build:
+    name: run.py without building / ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    container: ros:${{ matrix.distro }}-ros-core
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [humble, jazzy, lyrical]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Demo and one-shot check straight from the clone
+        run: |
+          source /opt/ros/$ROS_DISTRO/setup.bash
+          python3 run.py demo > demo.log 2>&1 &
+          sleep 40
+          python3 run.py check -d 8 --format md --fail-on never | tee report.md
+          grep -q "QoS mismatch on /scan" report.md
+          grep -q "share the name /motor_driver" report.md
+          grep -q "did you mean /camera/image_raw" report.md
+          ! grep -q "robot_monitor: " report.md

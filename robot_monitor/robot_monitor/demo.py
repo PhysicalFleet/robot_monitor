@@ -41,6 +41,15 @@ def _stamp(node, header, frame):
     header.frame_id = frame
 
 
+def _have_tf():
+    try:
+        # tf2_msgs is not part of ros-core, so the TF parts of the demo are optional.
+        import tf2_msgs.msg  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def _tf_publisher(node, static=False):
     from tf2_msgs.msg import TFMessage
     if static:
@@ -110,12 +119,13 @@ class Slam(Node):
         m.data = [0] * 2500
         _stamp(self, m.header, 'map')
         self.map_pub.publish(m)
-        self.create_timer(20.0, lambda: self.get_logger().warn('no scans received yet'))
+        self.create_timer(20.0, lambda: self.get_logger().warning('no scans received yet'))
         # BUG: publishes map -> base_link instead of map -> odom, so base_link gets two parents.
-        from tf2_msgs.msg import TFMessage
-        tf = _tf_publisher(self)
-        self.create_timer(0.1, lambda: tf.publish(TFMessage(
-            transforms=[_transform(self, 'map', 'base_link')])))
+        if _have_tf():
+            from tf2_msgs.msg import TFMessage
+            tf = _tf_publisher(self)
+            self.create_timer(0.1, lambda: tf.publish(TFMessage(
+                transforms=[_transform(self, 'map', 'base_link')])))
 
 
 class Detector(Node):
@@ -139,22 +149,23 @@ class Odometry(Node):
         self.msg = Odom()
         self.msg.child_frame_id = 'base_link'
         self.pub = self.create_publisher(Odom, '/odom', 10)
-        self.tf = _tf_publisher(self)
-        from tf2_msgs.msg import TFMessage
-        self.tfmsg = TFMessage
-        static = _tf_publisher(self, static=True)
-        static.publish(TFMessage(transforms=[
-            _transform(self, 'base_link', 'laser', 0.1, 0.0, 0.2),
-            _transform(self, 'base_link', 'camera_link', 0.15, 0.0, 0.3),
-            _transform(self, 'camera_link', 'camera_optical_frame'),
-            _transform(self, 'base_link', 'imu_link')]))
-        self._static = static
+        self.tf = None
+        if _have_tf():
+            from tf2_msgs.msg import TFMessage
+            self.tf, self.tfmsg = _tf_publisher(self), TFMessage
+            self._static = _tf_publisher(self, static=True)
+            self._static.publish(TFMessage(transforms=[
+                _transform(self, 'base_link', 'laser', 0.1, 0.0, 0.2),
+                _transform(self, 'base_link', 'camera_link', 0.15, 0.0, 0.3),
+                _transform(self, 'camera_link', 'camera_optical_frame'),
+                _transform(self, 'base_link', 'imu_link')]))
         self.create_timer(0.02, self.tick)
 
     def tick(self):
         _stamp(self, self.msg.header, 'odom')
         self.pub.publish(self.msg)
-        self.tf.publish(self.tfmsg(transforms=[_transform(self, 'odom', 'base_link')]))
+        if self.tf is not None:
+            self.tf.publish(self.tfmsg(transforms=[_transform(self, 'odom', 'base_link')]))
 
 
 class Planner(Node):
@@ -253,6 +264,10 @@ def _lifecycle_node():
             super().__init__('arm_controller')
     return Arm()
 
+
+# One process per entry, like a real robot ('driver' twice on purpose: duplicate node names).
+DEMO_PROCESSES = ['camera', 'lidar', 'slam', 'detector', 'odometry', 'planner', 'mapper', 'imu',
+                  'driver', 'driver', 'arm']
 
 ROLES = {
     'camera': Camera, 'lidar': Lidar, 'slam': Slam, 'detector': Detector,

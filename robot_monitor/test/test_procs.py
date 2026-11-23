@@ -43,6 +43,14 @@ def test_display_name_python_script():
     assert p.display_name() == 'talker'
 
 
+def test_display_name_inline_code_and_module():
+    p = procs.Proc(1, 1)
+    p.cmdline = ['/usr/bin/python3', '-c', 'import sys; do_things()', '--role', 'x']
+    assert p.display_name() == 'python3 -c'
+    p.cmdline = ['/usr/bin/python3', '-m', 'robot_monitor.demo', '--role', 'x']
+    assert p.display_name() == 'robot_monitor.demo'
+
+
 def test_live_tables():
     if not procs.IS_LINUX:
         return

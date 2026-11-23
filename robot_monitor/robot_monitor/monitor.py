@@ -168,9 +168,8 @@ class Monitor(Node):
         self.issues = []
         self._diag_pub = None
         self._last_diag_pub = 0.0
-        self._rosout_cls = get_message('rcl_interfaces/msg/Log') if get_message else None
-        self._diag_cls = (get_message('diagnostic_msgs/msg/DiagnosticArray')
-                          if get_message else None)
+        self._rosout_cls = _message_or_none('rcl_interfaces/msg/Log')
+        self._diag_cls = _message_or_none('diagnostic_msgs/msg/DiagnosticArray')
 
         self._feeds = []
         self.tf = TfTracker()
@@ -207,7 +206,7 @@ class Monitor(Node):
             self._feeds.append(self.create_subscription(
                 self._diag_cls, '/diagnostics', lambda raw, w=w: self._on_diag(raw, w),
                 FEED_QOS, raw=True, event_callbacks=_no_events()))
-        tf_cls = get_message('tf2_msgs/msg/TFMessage') if get_message else None
+        tf_cls = _message_or_none('tf2_msgs/msg/TFMessage')  # not in ros-core: TF tab stays empty
         if tf_cls is not None:
             for name, qos, static in (('/tf', TF_QOS, False), ('/tf_static', TF_STATIC_QOS, True)):
                 w = _Watched(name, 'tf2_msgs/msg/TFMessage')
@@ -252,8 +251,10 @@ class Monitor(Node):
             return
         now = time.monotonic()
         for s in m.status:
-            if s.hardware_id == self._hw_id():
-                continue  # our own statuses
+            if s.name.startswith('robot_monitor:') or s.hardware_id.startswith('robot_monitor@'):
+                # Findings of any Robot Monitor (ours or another one on the network): reading
+                # them back would re-report them in a loop between monitors.
+                continue
             lvl = s.level if isinstance(s.level, int) else ord(s.level)
             prev = self.diag.get(s.name)
             held_since = prev['level_since'] if prev and prev['level'] == lvl else now
@@ -271,7 +272,7 @@ class Monitor(Node):
         try:
             self._refresh_graph()
         except Exception as e:  # never let a graph glitch kill the monitor
-            self.get_logger().warn('graph refresh failed: %r' % (e,), throttle_duration_sec=30)
+            self.get_logger().warning('graph refresh failed: %r' % (e,), throttle_duration_sec=30)
 
     def _refresh_graph(self):
         now = time.monotonic()
@@ -574,7 +575,7 @@ class Monitor(Node):
         try:
             self._poll_services()
         except Exception as e:
-            self.get_logger().warn('service poll failed: %r' % (e,), throttle_duration_sec=60)
+            self.get_logger().warning('service poll failed: %r' % (e,), throttle_duration_sec=60)
 
     def _poll_services(self):
         if get_service is None:
@@ -745,7 +746,8 @@ class Monitor(Node):
             self.ptable.refresh()
             self.host.refresh()
         except Exception as e:
-            self.get_logger().warn('process refresh failed: %r' % (e,), throttle_duration_sec=60)
+            self.get_logger().warning('process refresh failed: %r' % (e,),
+                                      throttle_duration_sec=60)
 
     # --------------------------------------------------------- snapshot --
     def watching(self):
@@ -988,7 +990,7 @@ class Monitor(Node):
         except FileNotFoundError:
             return None
         except Exception as e:
-            self.get_logger().warn('cannot read baseline %s: %s' % (self.p_baseline, e))
+            self.get_logger().warning('cannot read baseline %s: %s' % (self.p_baseline, e))
             return None
 
     def baseline_from_now(self):
@@ -1122,6 +1124,16 @@ def msg_to_dict(msg, max_items=32, max_str=2000, depth=0):
         return msg.item()   # numpy scalar
     except AttributeError:
         return str(msg)
+
+
+def _message_or_none(type_name):
+    """Import a message type, or None when its package isn't installed (minimal ROS installs)."""
+    if get_message is None:
+        return None
+    try:
+        return get_message(type_name)
+    except Exception:
+        return None
 
 
 def _param_value(v):

@@ -51,7 +51,9 @@ def _start(duration_hint=None, publish_diagnostics=False, baseline=None, extra=N
         overrides.append(Parameter('baseline_file', value=os.path.abspath(baseline)))
     for k, v in (extra or {}).items():
         overrides.append(Parameter(k, value=v))
-    node = Monitor(node_name='_robot_monitor_cli_%d' % os.getpid(), parameter_overrides=overrides)
+    # Unique even across machines (several people may run `check` on one network).
+    node = Monitor(node_name='_robot_monitor_cli_%d_%s' % (os.getpid(), os.urandom(3).hex()),
+                   parameter_overrides=overrides)
     node.always_active = True
     ex, th = spin_in_thread(node)
     return rclpy, node, ex

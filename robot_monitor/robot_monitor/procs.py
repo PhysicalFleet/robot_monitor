@@ -131,9 +131,12 @@ class Proc:
             return self.comm
         base = os.path.basename(cmd[0])
         if base.startswith('python') and len(cmd) > 1:
-            for a in cmd[1:]:
-                if a == '-m':
-                    continue
+            args = cmd[1:]
+            for i, a in enumerate(args):
+                if a == '-c':
+                    return base + ' -c'   # inline code: never show the code itself
+                if a == '-m' and i + 1 < len(args):
+                    return args[i + 1]
                 if not a.startswith('-'):
                     return os.path.basename(a)
         return base or self.comm
